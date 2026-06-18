@@ -1,6 +1,6 @@
-data/
 __pycache__/
 .pytest_cache/
 .venv/
-api/.venv/
-.env
+*.pyc
+*.pyo
+*.pyd

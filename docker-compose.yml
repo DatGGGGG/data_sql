@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16
     container_name: strategy-data-system
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -12,5 +13,40 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./data:/data
       - ./sql:/sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  api:
+    build:
+      context: ./api
+    container_name: strategy-data-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mydb
+      API_NAME: Strategy Data API
+      API_VERSION: 0.1.0
+    ports:
+      - "8000:8000"
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: strategy-data-ngrok
+    restart: unless-stopped
+    profiles:
+      - ngrok
+    depends_on:
+      - api
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command:
+      - http
+      - http://api:8000
+    ports:
+      - "4040:4040"
 volumes:
   pgdata:
