@@ -48,9 +48,16 @@ Main schema setup:
 docker exec -i strategy-data-system psql -U postgres -d mydb -f /sql/schema.sql
 docker exec -i strategy-data-system psql -U postgres -d mydb -f /sql/steam_schema.sql
 docker exec -i strategy-data-system psql -U postgres -d mydb -f /sql/api_access_schema.sql
+docker exec -i strategy-data-system psql -U postgres -d mydb -f /sql/analytics_serving_layer.sql
 ```
 
 Then run the existing loaders in `sql/` to populate the tables.
+
+After the warehouse load completes, refresh the analytics serving layer:
+
+```bash
+docker exec -i strategy-data-system psql -U postgres -d mydb -f /sql/refresh_analytics_serving_layer.sql
+```
 
 ## API key auth
 

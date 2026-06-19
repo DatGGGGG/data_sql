@@ -1,0 +1,20 @@
+\set ON_ERROR_STOP on
+\pset pager off
+
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_game_monthly_performance;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_market_monthly_overview;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_publisher_monthly_performance;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_taxonomy_monthly_performance;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_download_total_yearly;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_revenue_by_subgenre_yearly;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_revenue_by_game_yearly;
+REFRESH MATERIALIZED VIEW analytics.mv_mobile_new_games_performance_by_launch_year;
+
+ANALYZE analytics.mv_mobile_game_monthly_performance;
+ANALYZE analytics.mv_mobile_market_monthly_overview;
+ANALYZE analytics.mv_mobile_publisher_monthly_performance;
+ANALYZE analytics.mv_mobile_taxonomy_monthly_performance;
+ANALYZE analytics.mv_mobile_download_total_yearly;
+ANALYZE analytics.mv_mobile_revenue_by_subgenre_yearly;
+ANALYZE analytics.mv_mobile_revenue_by_game_yearly;
+ANALYZE analytics.mv_mobile_new_games_performance_by_launch_year;
