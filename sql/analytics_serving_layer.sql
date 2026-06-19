@@ -5,6 +5,7 @@ CREATE SCHEMA IF NOT EXISTS analytics;
 
 DROP MATERIALIZED VIEW IF EXISTS analytics.agg_game_performance_daily;
 DROP TABLE IF EXISTS analytics.agg_game_performance_daily;
+DROP VIEW IF EXISTS analytics.agg_game_performance_daily;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_new_games_performance_by_launch_year;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_game_yearly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_subgenre_yearly;
@@ -19,7 +20,7 @@ DROP TABLE IF EXISTS analytics.mobile_app_yearly_performance_cache;
 DROP TABLE IF EXISTS analytics.mobile_app_monthly_performance_cache;
 DROP VIEW IF EXISTS analytics.vw_mobile_app_performance_base;
 
-CREATE TABLE analytics.agg_game_performance_daily AS
+CREATE OR REPLACE VIEW analytics.agg_game_performance_daily AS
 SELECT
     f.date,
     f.country,
@@ -73,8 +74,7 @@ GROUP BY
     g.name,
     g.game_class,
     g.game_genre,
-    g.game_subgenre
-WITH NO DATA;
+    g.game_subgenre;
 
 CREATE TABLE analytics.mobile_app_monthly_performance_cache AS
 SELECT
@@ -679,9 +679,3 @@ ON analytics.mv_mobile_new_games_performance_by_launch_year (year);
 
 CREATE INDEX idx_mv_mobile_new_games_perf_first_date
 ON analytics.mv_mobile_new_games_performance_by_launch_year (game_first_date);
-
-CREATE INDEX idx_agg_game_perf_daily_date_country
-ON analytics.agg_game_performance_daily (date, country);
-
-CREATE INDEX idx_agg_game_perf_daily_unified_app_date
-ON analytics.agg_game_performance_daily (unified_app_id, date);
