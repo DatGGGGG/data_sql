@@ -4,6 +4,7 @@
 CREATE SCHEMA IF NOT EXISTS analytics;
 
 DROP MATERIALIZED VIEW IF EXISTS analytics.agg_game_performance_daily;
+DROP TABLE IF EXISTS analytics.agg_game_performance_daily;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_new_games_performance_by_launch_year;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_game_yearly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_subgenre_yearly;
@@ -18,7 +19,7 @@ DROP TABLE IF EXISTS analytics.mobile_app_yearly_performance_cache;
 DROP TABLE IF EXISTS analytics.mobile_app_monthly_performance_cache;
 DROP VIEW IF EXISTS analytics.vw_mobile_app_performance_base;
 
-CREATE MATERIALIZED VIEW analytics.agg_game_performance_daily AS
+CREATE TABLE analytics.agg_game_performance_daily AS
 SELECT
     f.date,
     f.country,

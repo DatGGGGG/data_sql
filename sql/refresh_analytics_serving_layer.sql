@@ -4,6 +4,7 @@
 SET max_parallel_workers_per_gather = 0;
 SET work_mem = '128MB';
 
+TRUNCATE TABLE analytics.agg_game_performance_daily;
 TRUNCATE TABLE analytics.mobile_app_monthly_performance_cache;
 TRUNCATE TABLE analytics.mobile_app_yearly_performance_cache;
 
@@ -24,6 +25,82 @@ BEGIN
     END IF;
 
     FOR current_year IN min_year..max_year LOOP
+        RAISE NOTICE 'Rebuilding daily game aggregate for year %', current_year;
+
+        INSERT INTO analytics.agg_game_performance_daily (
+            date,
+            country,
+            game_name,
+            unified_app_id,
+            game_class,
+            game_genre,
+            game_subgenre,
+            downloads,
+            revenue
+        )
+        SELECT
+            f.date,
+            f.country,
+            g.name AS game_name,
+            a.unified_app_id,
+            g.game_class,
+            g.game_genre,
+            g.game_subgenre,
+            SUM(COALESCE(f.downloads, 0)) AS downloads,
+            SUM(COALESCE(f.revenue, 0)) AS revenue
+        FROM (
+            SELECT
+                date,
+                country_android AS country,
+                app_id,
+                downloads_android AS downloads,
+                revenue_android AS revenue
+            FROM core.fact_app_performance_daily
+            WHERE date >= MAKE_DATE(current_year, 1, 1)
+              AND date < MAKE_DATE(current_year + 1, 1, 1)
+              AND country_android IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                date,
+                country_ios AS country,
+                app_id,
+                downloads_iphone AS downloads,
+                revenue_iphone AS revenue
+            FROM core.fact_app_performance_daily
+            WHERE date >= MAKE_DATE(current_year, 1, 1)
+              AND date < MAKE_DATE(current_year + 1, 1, 1)
+              AND country_ios IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                date,
+                country_ios AS country,
+                app_id,
+                downloads_ipad AS downloads,
+                revenue_ipad AS revenue
+            FROM core.fact_app_performance_daily
+            WHERE date >= MAKE_DATE(current_year, 1, 1)
+              AND date < MAKE_DATE(current_year + 1, 1, 1)
+              AND country_ios IS NOT NULL
+        ) AS f
+        JOIN core.dim_app_info AS a
+          ON a.app_id = f.app_id
+        JOIN core.dim_game_info AS g
+          ON g.unified_app_id = a.unified_app_id
+        WHERE a.unified_app_id IS NOT NULL
+          AND btrim(a.unified_app_id) <> ''
+        GROUP BY
+            f.date,
+            f.country,
+            g.name,
+            a.unified_app_id,
+            g.game_class,
+            g.game_genre,
+            g.game_subgenre;
+
         RAISE NOTICE 'Rebuilding monthly mobile cache for year %', current_year;
 
         INSERT INTO analytics.mobile_app_monthly_performance_cache (
@@ -118,10 +195,10 @@ BEGIN
 END;
 $$;
 
+ANALYZE analytics.agg_game_performance_daily;
 ANALYZE analytics.mobile_app_monthly_performance_cache;
 ANALYZE analytics.mobile_app_yearly_performance_cache;
 
-REFRESH MATERIALIZED VIEW analytics.agg_game_performance_daily;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_game_monthly_performance;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_market_monthly_overview;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_publisher_monthly_performance;
@@ -131,7 +208,6 @@ REFRESH MATERIALIZED VIEW analytics.mv_mobile_revenue_by_subgenre_yearly;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_revenue_by_game_yearly;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_new_games_performance_by_launch_year;
 
-ANALYZE analytics.agg_game_performance_daily;
 ANALYZE analytics.mv_mobile_game_monthly_performance;
 ANALYZE analytics.mv_mobile_market_monthly_overview;
 ANALYZE analytics.mv_mobile_publisher_monthly_performance;
