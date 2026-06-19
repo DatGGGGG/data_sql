@@ -13,6 +13,8 @@ DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_market_monthly_overview;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_game_monthly_performance;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_app_yearly_performance;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_app_monthly_performance;
+DROP TABLE IF EXISTS analytics.mobile_app_yearly_performance_cache;
+DROP TABLE IF EXISTS analytics.mobile_app_monthly_performance_cache;
 DROP VIEW IF EXISTS analytics.vw_mobile_app_performance_base;
 
 CREATE OR REPLACE VIEW analytics.vw_mobile_app_performance_base AS
@@ -72,7 +74,7 @@ LEFT JOIN core.dim_game_info AS g
   ON g.unified_app_id = a.unified_app_id
 WHERE f.country IS NOT NULL;
 
-CREATE MATERIALIZED VIEW analytics.mv_mobile_app_monthly_performance AS
+CREATE TABLE analytics.mobile_app_monthly_performance_cache AS
 SELECT
     DATE_TRUNC('month', date)::date AS month,
     country_android AS country,
@@ -111,7 +113,7 @@ WHERE country_ios IS NOT NULL
 GROUP BY 1, 2, 3, 4
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW analytics.mv_mobile_app_yearly_performance AS
+CREATE TABLE analytics.mobile_app_yearly_performance_cache AS
 SELECT
     EXTRACT(YEAR FROM date)::int AS year,
     app_id,
@@ -145,7 +147,7 @@ SELECT
     COUNT(*) AS app_count,
     SUM(COALESCE(h.total_downloads, 0)) AS total_downloads,
     SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mv_mobile_app_monthly_performance AS h
+FROM analytics.mobile_app_monthly_performance_cache AS h
 LEFT JOIN core.dim_app_info AS a
   ON a.app_id = h.app_id
 LEFT JOIN core.dim_game_info AS g
@@ -179,7 +181,7 @@ SELECT
     SUM(CASE WHEN h.platform = 'iphone' THEN COALESCE(h.total_revenue, 0) ELSE 0 END) AS revenue_iphone,
     SUM(CASE WHEN h.platform = 'ipad' THEN COALESCE(h.total_revenue, 0) ELSE 0 END) AS revenue_ipad,
     SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mv_mobile_app_monthly_performance AS h
+FROM analytics.mobile_app_monthly_performance_cache AS h
 LEFT JOIN core.dim_app_info AS a
   ON a.app_id = h.app_id
 GROUP BY
@@ -199,7 +201,7 @@ SELECT
     COUNT(DISTINCT a.unified_app_id) AS game_count,
     SUM(COALESCE(h.total_downloads, 0)) AS total_downloads,
     SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mv_mobile_app_monthly_performance AS h
+FROM analytics.mobile_app_monthly_performance_cache AS h
 LEFT JOIN core.dim_app_info AS a
   ON a.app_id = h.app_id
 GROUP BY
@@ -223,7 +225,7 @@ SELECT
     COUNT(*) AS app_count,
     SUM(COALESCE(h.total_downloads, 0)) AS total_downloads,
     SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mv_mobile_app_monthly_performance AS h
+FROM analytics.mobile_app_monthly_performance_cache AS h
 LEFT JOIN core.dim_app_info AS a
   ON a.app_id = h.app_id
 LEFT JOIN core.dim_game_info AS g
@@ -263,7 +265,7 @@ raw_year AS (
     SELECT
         ayp.year,
         SUM(ayp.total_downloads) AS downloads
-    FROM analytics.mv_mobile_app_yearly_performance AS ayp
+    FROM analytics.mobile_app_yearly_performance_cache AS ayp
     JOIN core.dim_app_info AS a
       ON a.app_id = ayp.app_id
     JOIN core.dim_game_info AS g
@@ -315,7 +317,7 @@ app_year_revenue AS (
         year,
         app_id,
         total_revenue AS revenue_cent
-    FROM analytics.mv_mobile_app_yearly_performance
+    FROM analytics.mobile_app_yearly_performance_cache
     WHERE year BETWEEN 2014 AND 2025
 ),
 cgs_year AS (
@@ -385,7 +387,7 @@ app_year_revenue AS (
         year,
         app_id,
         total_revenue AS revenue_cent
-    FROM analytics.mv_mobile_app_yearly_performance
+    FROM analytics.mobile_app_yearly_performance_cache
     WHERE year BETWEEN 2014 AND 2025
 ),
 game_year AS (
@@ -625,14 +627,14 @@ WITH NO DATA;
 CREATE INDEX idx_mv_mobile_game_monthly_perf_month_country_platform
 ON analytics.mv_mobile_game_monthly_performance (month, country, platform);
 
-CREATE INDEX idx_mv_mobile_app_monthly_perf_month_country_platform
-ON analytics.mv_mobile_app_monthly_performance (month, country, platform);
+CREATE INDEX idx_mobile_app_monthly_cache_month_country_platform
+ON analytics.mobile_app_monthly_performance_cache (month, country, platform);
 
-CREATE INDEX idx_mv_mobile_app_monthly_perf_app_month
-ON analytics.mv_mobile_app_monthly_performance (app_id, month);
+CREATE INDEX idx_mobile_app_monthly_cache_app_month
+ON analytics.mobile_app_monthly_performance_cache (app_id, month);
 
-CREATE INDEX idx_mv_mobile_app_yearly_perf_year_app
-ON analytics.mv_mobile_app_yearly_performance (year, app_id);
+CREATE INDEX idx_mobile_app_yearly_cache_year_app
+ON analytics.mobile_app_yearly_performance_cache (year, app_id);
 
 CREATE INDEX idx_mv_mobile_game_monthly_perf_game_month
 ON analytics.mv_mobile_game_monthly_performance (game_id, month);

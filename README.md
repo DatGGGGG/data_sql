@@ -59,6 +59,8 @@ After the warehouse load completes, refresh the analytics serving layer:
 docker exec -i strategy-data-system psql -U postgres -d mydb -f /sql/refresh_analytics_serving_layer.sql
 ```
 
+The refresh script rebuilds the internal monthly/yearly helper caches in yearly batches before refreshing the public `analytics` materialized views. That keeps refreshes friendlier to smaller VM disks.
+
 ## API key auth
 
 Data endpoints now require an `X-API-Key` header.
