@@ -3,9 +3,28 @@
 
 CREATE SCHEMA IF NOT EXISTS analytics;
 
-DROP MATERIALIZED VIEW IF EXISTS analytics.agg_game_performance_daily;
-DROP TABLE IF EXISTS analytics.agg_game_performance_daily;
-DROP VIEW IF EXISTS analytics.agg_game_performance_daily;
+DO $$
+DECLARE
+    relkind_char "char";
+BEGIN
+    SELECT c.relkind
+    INTO relkind_char
+    FROM pg_class AS c
+    JOIN pg_namespace AS n
+      ON n.oid = c.relnamespace
+    WHERE n.nspname = 'analytics'
+      AND c.relname = 'agg_game_performance_daily';
+
+    IF relkind_char = 'm' THEN
+        EXECUTE 'DROP MATERIALIZED VIEW analytics.agg_game_performance_daily';
+    ELSIF relkind_char = 'r' THEN
+        EXECUTE 'DROP TABLE analytics.agg_game_performance_daily';
+    ELSIF relkind_char = 'v' THEN
+        EXECUTE 'DROP VIEW analytics.agg_game_performance_daily';
+    END IF;
+END;
+$$;
+
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_new_games_performance_by_launch_year;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_game_yearly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_subgenre_yearly;
