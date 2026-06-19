@@ -121,6 +121,7 @@ $$;
 ANALYZE analytics.mobile_app_monthly_performance_cache;
 ANALYZE analytics.mobile_app_yearly_performance_cache;
 
+REFRESH MATERIALIZED VIEW analytics.agg_game_performance_daily;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_game_monthly_performance;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_market_monthly_overview;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_publisher_monthly_performance;
@@ -130,6 +131,7 @@ REFRESH MATERIALIZED VIEW analytics.mv_mobile_revenue_by_subgenre_yearly;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_revenue_by_game_yearly;
 REFRESH MATERIALIZED VIEW analytics.mv_mobile_new_games_performance_by_launch_year;
 
+ANALYZE analytics.agg_game_performance_daily;
 ANALYZE analytics.mv_mobile_game_monthly_performance;
 ANALYZE analytics.mv_mobile_market_monthly_overview;
 ANALYZE analytics.mv_mobile_publisher_monthly_performance;

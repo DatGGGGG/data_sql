@@ -3,6 +3,7 @@
 
 CREATE SCHEMA IF NOT EXISTS analytics;
 
+DROP MATERIALIZED VIEW IF EXISTS analytics.agg_game_performance_daily;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_new_games_performance_by_launch_year;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_game_yearly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_subgenre_yearly;
@@ -17,30 +18,21 @@ DROP TABLE IF EXISTS analytics.mobile_app_yearly_performance_cache;
 DROP TABLE IF EXISTS analytics.mobile_app_monthly_performance_cache;
 DROP VIEW IF EXISTS analytics.vw_mobile_app_performance_base;
 
-CREATE OR REPLACE VIEW analytics.vw_mobile_app_performance_base AS
+CREATE MATERIALIZED VIEW analytics.agg_game_performance_daily AS
 SELECT
     f.date,
     f.country,
-    f.platform,
-    f.app_id,
-    a.unified_app_id AS game_id,
-    a.name AS app_name,
     g.name AS game_name,
-    a.publisher_id,
-    a.publisher_name,
-    a.cleaned_publisher_name,
-    a.os,
-    a.active,
+    a.unified_app_id,
     g.game_class,
     g.game_genre,
     g.game_subgenre,
-    f.downloads,
-    f.revenue
+    SUM(COALESCE(f.downloads, 0)) AS downloads,
+    SUM(COALESCE(f.revenue, 0)) AS revenue
 FROM (
     SELECT
         date,
         country_android AS country,
-        'android'::text AS platform,
         app_id,
         downloads_android AS downloads,
         revenue_android AS revenue
@@ -51,7 +43,6 @@ FROM (
     SELECT
         date,
         country_ios AS country,
-        'iphone'::text AS platform,
         app_id,
         downloads_iphone AS downloads,
         revenue_iphone AS revenue
@@ -62,17 +53,27 @@ FROM (
     SELECT
         date,
         country_ios AS country,
-        'ipad'::text AS platform,
         app_id,
         downloads_ipad AS downloads,
         revenue_ipad AS revenue
     FROM core.fact_app_performance_daily
 ) AS f
-LEFT JOIN core.dim_app_info AS a
+JOIN core.dim_app_info AS a
   ON a.app_id = f.app_id
-LEFT JOIN core.dim_game_info AS g
+JOIN core.dim_game_info AS g
   ON g.unified_app_id = a.unified_app_id
-WHERE f.country IS NOT NULL;
+WHERE f.country IS NOT NULL
+  AND a.unified_app_id IS NOT NULL
+  AND btrim(a.unified_app_id) <> ''
+GROUP BY
+    f.date,
+    f.country,
+    a.unified_app_id,
+    g.name,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre
+WITH NO DATA;
 
 CREATE TABLE analytics.mobile_app_monthly_performance_cache AS
 SELECT
@@ -677,3 +678,9 @@ ON analytics.mv_mobile_new_games_performance_by_launch_year (year);
 
 CREATE INDEX idx_mv_mobile_new_games_perf_first_date
 ON analytics.mv_mobile_new_games_performance_by_launch_year (game_first_date);
+
+CREATE INDEX idx_agg_game_perf_daily_date_country
+ON analytics.agg_game_performance_daily (date, country);
+
+CREATE INDEX idx_agg_game_perf_daily_unified_app_date
+ON analytics.agg_game_performance_daily (unified_app_id, date);
