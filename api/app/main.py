@@ -6,9 +6,12 @@ from typing import Any
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
+from .catalog import CATALOG, allowed_catalog_objects
 from .config import get_settings
-from .db import fetch_all, fetch_one, ping_database
+from .db import fetch_all, fetch_catalog_columns, fetch_one, ping_database, run_read_only_query
+from .query_guard import QueryValidationError, validate_read_only_sql
 from .security import require_api_key
 
 settings = get_settings()
@@ -21,12 +24,19 @@ app = FastAPI(
 protected = APIRouter(dependencies=[Depends(require_api_key)])
 
 
+class QueryRequest(BaseModel):
+    sql: str = Field(description="Read-only SQL against approved analytics objects.")
+    max_rows: int | None = Field(default=None, ge=1, le=500)
+
+
 def explain_database_error(exc: psycopg.Error) -> tuple[int, str]:
     if isinstance(exc, (psycopg.errors.InvalidSchemaName, psycopg.errors.UndefinedTable)):
         return (
             503,
             "Database schema is not ready. Run the SQL schema and load scripts before using data endpoints.",
         )
+    if isinstance(exc, psycopg.errors.QueryCanceled):
+        return 408, "Database query timed out. Narrow the filters and try again."
     return 500, f"Database query failed: {exc}"
 
 
@@ -39,6 +49,11 @@ def handle_database_error(_: Request, exc: psycopg.Error) -> JSONResponse:
 def normalize_limit(limit: int | None) -> int:
     value = limit or settings.default_limit
     return max(1, min(value, settings.max_limit))
+
+
+def normalize_query_row_limit(limit: int | None) -> int:
+    value = limit or settings.query_default_rows
+    return max(1, min(value, settings.query_max_rows))
 
 
 def build_search_pattern(q: str | None) -> str | None:
@@ -57,8 +72,11 @@ def root() -> dict[str, Any]:
         "auth": {"header": "X-API-Key", "protected_endpoints": "all data endpoints"},
         "endpoints": [
             "/health",
+            "/games/search",
             "/games",
             "/games/{unified_app_id}",
+            "/meta/catalog",
+            "/query",
             "/apps",
             "/apps/{app_id}",
             "/apps/{app_id}/performance",
@@ -77,6 +95,38 @@ def health() -> dict[str, str]:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
 
     return {"status": "ok", "database": "ok"}
+
+
+@protected.get("/games/search")
+def search_games(
+    q: str = Query(description="Search by game name or canonical app id."),
+    limit: int | None = Query(default=20, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    query = """
+        SELECT
+            g.unified_app_id,
+            g.name AS game_name,
+            g.canonical_app_id,
+            g.game_class,
+            g.game_genre,
+            g.game_subgenre
+        FROM core.dim_game_info AS g
+        WHERE g.name ILIKE CAST(%(pattern)s AS TEXT)
+           OR g.canonical_app_id ILIKE CAST(%(pattern)s AS TEXT)
+        ORDER BY g.name NULLS LAST, g.unified_app_id
+        LIMIT %(limit)s
+        OFFSET %(offset)s
+    """
+    items = fetch_all(
+        query,
+        {
+            "pattern": build_search_pattern(q),
+            "limit": normalize_limit(limit),
+            "offset": offset,
+        },
+    )
+    return {"items": items, "limit": normalize_limit(limit), "offset": offset}
 
 
 @protected.get("/games")
@@ -124,6 +174,56 @@ def list_games(
         },
     )
     return {"items": items, "limit": normalize_limit(limit), "offset": offset}
+
+
+@protected.get("/meta/catalog")
+def get_catalog() -> dict[str, Any]:
+    metadata_rows = fetch_catalog_columns(list(allowed_catalog_objects()))
+    grouped_columns: dict[str, list[dict[str, Any]]] = {}
+    object_types: dict[str, str] = {}
+
+    for row in metadata_rows:
+        object_name = row["object_name"]
+        object_types[object_name] = row["object_type"]
+        grouped_columns.setdefault(object_name, []).append(
+            {
+                "name": row["column_name"],
+                "data_type": row["data_type"],
+                "nullable": row["is_nullable"] == "YES",
+            }
+        )
+
+    objects: list[dict[str, Any]] = []
+    for object_name, entry in CATALOG.items():
+        objects.append(
+            {
+                "name": entry.name,
+                "object_type": object_types.get(object_name, "unknown"),
+                "grain": entry.grain,
+                "description": entry.description,
+                "columns": grouped_columns.get(object_name, []),
+                "examples": list(entry.examples),
+            }
+        )
+
+    return {"objects": objects}
+
+
+@protected.post("/query")
+def query_analytics(request: QueryRequest) -> dict[str, Any]:
+    try:
+        validated = validate_read_only_sql(request.sql, set(allowed_catalog_objects()))
+    except QueryValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = run_read_only_query(
+        validated.sql,
+        normalize_query_row_limit(request.max_rows),
+        settings.query_timeout_ms,
+    )
+    result["referenced_objects"] = list(validated.referenced_objects)
+    result["max_rows"] = normalize_query_row_limit(request.max_rows)
+    return result
 
 
 @protected.get("/games/{unified_app_id}")

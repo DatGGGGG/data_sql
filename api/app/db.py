@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+import time
 from typing import Any
 
 import psycopg
@@ -34,3 +35,56 @@ def ping_database() -> None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT 1")
         cur.fetchone()
+
+
+def fetch_catalog_columns(object_names: list[str]) -> list[dict[str, Any]]:
+    query = """
+        SELECT
+            concat(n.nspname, '.', c.relname) AS object_name,
+            CASE c.relkind
+                WHEN 'v' THEN 'view'
+                WHEN 'm' THEN 'materialized view'
+                WHEN 'r' THEN 'table'
+                ELSE c.relkind::text
+            END AS object_type,
+            cols.column_name,
+            cols.data_type,
+            cols.is_nullable,
+            cols.ordinal_position
+        FROM pg_class AS c
+        JOIN pg_namespace AS n
+          ON n.oid = c.relnamespace
+        JOIN information_schema.columns AS cols
+          ON cols.table_schema = n.nspname
+         AND cols.table_name = c.relname
+        WHERE concat(n.nspname, '.', c.relname) = ANY(%(object_names)s)
+        ORDER BY object_name, cols.ordinal_position
+    """
+    return fetch_all(query, {"object_names": object_names})
+
+
+def run_read_only_query(sql: str, row_cap: int, timeout_ms: int) -> dict[str, Any]:
+    wrapped_sql = f"SELECT * FROM ({sql}) AS query_result LIMIT {row_cap + 1}"
+    started_at = time.perf_counter()
+
+    with get_connection() as conn:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                cur.execute("SET TRANSACTION READ ONLY")
+                cur.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
+                cur.execute(wrapped_sql)
+                columns = [desc.name for desc in cur.description or []]
+                rows = list(cur.fetchall())
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    truncated = len(rows) > row_cap
+    if truncated:
+        rows = rows[:row_cap]
+
+    return {
+        "columns": columns,
+        "rows": rows,
+        "row_count": len(rows),
+        "truncated": truncated,
+        "duration_ms": duration_ms,
+    }

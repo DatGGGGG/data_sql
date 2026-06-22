@@ -21,8 +21,11 @@ Services:
 ## API endpoints
 
 - `GET /health`
+- `GET /games/search`
 - `GET /games`
 - `GET /games/{unified_app_id}`
+- `GET /meta/catalog`
+- `POST /query`
 - `GET /apps`
 - `GET /apps/{app_id}`
 - `GET /apps/{app_id}/performance`
@@ -34,9 +37,22 @@ Example queries:
 
 ```bash
 curl "http://localhost:8000/games?limit=10"
+curl -H "X-API-Key: YOUR_KEY_HERE" "http://localhost:8000/games/search?q=Top%20Eleven"
+curl -H "X-API-Key: YOUR_KEY_HERE" "http://localhost:8000/meta/catalog"
 curl "http://localhost:8000/apps?q=Farm%20Frenzy"
 curl "http://localhost:8000/apps/321322202/performance?limit=30"
 ```
+
+Query endpoint example:
+
+```bash
+curl -X POST "http://localhost:8000/query" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_KEY_HERE" \
+  -d "{\"sql\":\"SELECT year, country, game_name, revenue FROM analytics.agg_game_performance_yearly WHERE country = 'VN' AND year = 2025 ORDER BY revenue DESC LIMIT 20\",\"max_rows\":100}"
+```
+
+The query endpoint is restricted to approved `analytics` objects and read-only SQL.
 
 ## Database setup
 
