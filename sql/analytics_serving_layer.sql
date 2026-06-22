@@ -25,6 +25,11 @@ BEGIN
 END;
 $$;
 
+DROP MATERIALIZED VIEW IF EXISTS analytics.agg_new_game_new_performance;
+DROP MATERIALIZED VIEW IF EXISTS analytics.agg_game_performance_yearly;
+DROP MATERIALIZED VIEW IF EXISTS analytics.agg_subgenre_performance_yearly;
+DROP MATERIALIZED VIEW IF EXISTS analytics.agg_subgenre_performance_monthly;
+DROP MATERIALIZED VIEW IF EXISTS analytics.agg_game_performance_monthly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_new_games_performance_by_launch_year;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_game_yearly;
 DROP MATERIALIZED VIEW IF EXISTS analytics.mv_mobile_revenue_by_subgenre_yearly;
@@ -152,86 +157,47 @@ FROM core.fact_app_performance_daily
 GROUP BY 1, 2
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW analytics.mv_mobile_game_monthly_performance AS
+CREATE MATERIALIZED VIEW analytics.agg_game_performance_monthly AS
+WITH game_publishers AS (
+    SELECT
+        a.unified_app_id,
+        string_agg(DISTINCT a.cleaned_publisher_name, ';' ORDER BY a.cleaned_publisher_name)
+            FILTER (WHERE a.cleaned_publisher_name IS NOT NULL AND btrim(a.cleaned_publisher_name) <> '')
+            AS cleaned_publisher_name
+    FROM core.dim_app_info AS a
+    WHERE a.unified_app_id IS NOT NULL
+      AND btrim(a.unified_app_id) <> ''
+    GROUP BY 1
+)
 SELECT
     h.month,
     h.country,
-    h.platform,
-    a.unified_app_id AS game_id,
     g.name AS game_name,
-    publisher_id,
-    publisher_name,
-    cleaned_publisher_name,
-    game_class,
-    game_genre,
-    game_subgenre,
-    COUNT(*) AS app_count,
-    SUM(COALESCE(h.total_downloads, 0)) AS total_downloads,
-    SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mobile_app_monthly_performance_cache AS h
-LEFT JOIN core.dim_app_info AS a
-  ON a.app_id = h.app_id
-LEFT JOIN core.dim_game_info AS g
-  ON g.unified_app_id = a.unified_app_id
-GROUP BY
-    h.month,
-    h.country,
-    h.platform,
     a.unified_app_id,
+    COALESCE(gp.cleaned_publisher_name, '') AS cleaned_publisher_name,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre,
+    SUM(COALESCE(h.total_downloads, 0)) AS downloads,
+    SUM(COALESCE(h.total_revenue, 0)) AS revenue
+FROM analytics.mobile_app_monthly_performance_cache AS h
+JOIN core.dim_app_info AS a
+  ON a.app_id = h.app_id
+JOIN core.dim_game_info AS g
+  ON g.unified_app_id = a.unified_app_id
+LEFT JOIN game_publishers AS gp
+  ON gp.unified_app_id = a.unified_app_id
+WHERE a.unified_app_id IS NOT NULL
+  AND btrim(a.unified_app_id) <> ''
+GROUP BY
+    h.month,
+    h.country,
     g.name,
-    publisher_id,
-    publisher_name,
-    cleaned_publisher_name,
-    game_class,
-    game_genre,
-    game_subgenre
-WITH NO DATA;
-
-CREATE MATERIALIZED VIEW analytics.mv_mobile_market_monthly_overview AS
-SELECT
-    h.month,
-    h.country,
-    COUNT(DISTINCT h.app_id) AS active_app_count,
-    COUNT(DISTINCT a.unified_app_id) AS active_game_count,
-    COUNT(DISTINCT publisher_id) FILTER (WHERE publisher_id IS NOT NULL AND btrim(publisher_id) <> '') AS active_publisher_count,
-    SUM(CASE WHEN h.platform = 'android' THEN COALESCE(h.total_downloads, 0) ELSE 0 END) AS downloads_android,
-    SUM(CASE WHEN h.platform = 'iphone' THEN COALESCE(h.total_downloads, 0) ELSE 0 END) AS downloads_iphone,
-    SUM(CASE WHEN h.platform = 'ipad' THEN COALESCE(h.total_downloads, 0) ELSE 0 END) AS downloads_ipad,
-    SUM(COALESCE(h.total_downloads, 0)) AS total_downloads,
-    SUM(CASE WHEN h.platform = 'android' THEN COALESCE(h.total_revenue, 0) ELSE 0 END) AS revenue_android,
-    SUM(CASE WHEN h.platform = 'iphone' THEN COALESCE(h.total_revenue, 0) ELSE 0 END) AS revenue_iphone,
-    SUM(CASE WHEN h.platform = 'ipad' THEN COALESCE(h.total_revenue, 0) ELSE 0 END) AS revenue_ipad,
-    SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mobile_app_monthly_performance_cache AS h
-LEFT JOIN core.dim_app_info AS a
-  ON a.app_id = h.app_id
-GROUP BY
-    h.month,
-    h.country
-WITH NO DATA;
-
-CREATE MATERIALIZED VIEW analytics.mv_mobile_publisher_monthly_performance AS
-SELECT
-    h.month,
-    h.country,
-    h.platform,
-    publisher_id,
-    publisher_name,
-    cleaned_publisher_name,
-    COUNT(*) AS app_count,
-    COUNT(DISTINCT a.unified_app_id) AS game_count,
-    SUM(COALESCE(h.total_downloads, 0)) AS total_downloads,
-    SUM(COALESCE(h.total_revenue, 0)) AS total_revenue
-FROM analytics.mobile_app_monthly_performance_cache AS h
-LEFT JOIN core.dim_app_info AS a
-  ON a.app_id = h.app_id
-GROUP BY
-    h.month,
-    h.country,
-    h.platform,
-    publisher_id,
-    publisher_name,
-    cleaned_publisher_name
+    a.unified_app_id,
+    COALESCE(gp.cleaned_publisher_name, ''),
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre
 WITH NO DATA;
 
 CREATE MATERIALIZED VIEW analytics.mv_mobile_taxonomy_monthly_performance AS
@@ -311,161 +277,79 @@ CROSS JOIN days_2025 AS d
 WHERE r.year BETWEEN 2014 AND 2025
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW analytics.mv_mobile_revenue_by_subgenre_yearly AS
-WITH max_2025 AS (
-    SELECT MAX(f.date)::date AS max_date_2025
-    FROM core.fact_app_performance_daily AS f
-    JOIN core.dim_app_info AS a
-      ON a.app_id = f.app_id
-    JOIN core.dim_game_info AS g
-      ON g.unified_app_id = a.unified_app_id
-    WHERE f.date >= DATE '2025-01-01'
-      AND f.date < DATE '2026-01-01'
-      AND (
-        g.game_product_model IS NULL
-        OR g.game_product_model NOT IN ('Hybridcasual', 'Hypercasual', 'Exclusive Access')
-      )
-),
-days_2025 AS (
-    SELECT
-        max_date_2025,
-        ((max_date_2025 - DATE '2025-01-01') + 1)::numeric AS days_elapsed_2025,
-        365.0 / NULLIF(((max_date_2025 - DATE '2025-01-01') + 1)::numeric, 0) AS annualize_factor
-    FROM max_2025
-),
-app_year_revenue AS (
-    SELECT
-        year,
-        app_id,
-        total_revenue AS revenue_cent
-    FROM analytics.mobile_app_yearly_performance_cache
-    WHERE year BETWEEN 2014 AND 2025
-),
-cgs_year AS (
-    SELECT
-        g.game_class AS game_class,
-        g.game_genre AS game_genre,
-        g.game_subgenre AS subgenre,
-        ayr.year,
-        SUM(ayr.revenue_cent) AS revenue_cent
-    FROM app_year_revenue AS ayr
-    JOIN core.dim_app_info AS a
-      ON a.app_id = ayr.app_id
-    JOIN core.dim_game_info AS g
-      ON g.unified_app_id = a.unified_app_id
-    WHERE g.game_subgenre IS NOT NULL
-      AND btrim(g.game_subgenre) <> ''
-      AND (
-        g.game_product_model IS NULL
-        OR g.game_product_model NOT IN ('Hybridcasual', 'Hypercasual', 'Exclusive Access')
-      )
-    GROUP BY 1, 2, 3, 4
-)
+CREATE MATERIALIZED VIEW analytics.agg_subgenre_performance_yearly AS
 SELECT
-    y.game_class,
-    y.game_genre,
-    y.subgenre,
-    y.year,
-    ROUND(
-        (
-            CASE
-                WHEN y.year = 2025 THEN y.revenue_cent * d.annualize_factor
-                ELSE y.revenue_cent
-            END
-        ) / 100.0,
-        2
-    ) AS revenue_usd,
-    CASE WHEN y.year = 2025 THEN d.max_date_2025 ELSE NULL END AS data_through_2025,
-    CASE WHEN y.year = 2025 THEN d.days_elapsed_2025 ELSE NULL END AS days_elapsed_2025
-FROM cgs_year AS y
-CROSS JOIN days_2025 AS d
+    EXTRACT(YEAR FROM h.month)::int AS year,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre AS subgenre,
+    SUM(COALESCE(h.total_downloads, 0)) AS downloads,
+    SUM(COALESCE(h.total_revenue, 0)) AS revenue
+FROM analytics.mobile_app_monthly_performance_cache AS h
+JOIN core.dim_app_info AS a
+  ON a.app_id = h.app_id
+JOIN core.dim_game_info AS g
+  ON g.unified_app_id = a.unified_app_id
+WHERE g.game_subgenre IS NOT NULL
+  AND btrim(g.game_subgenre) <> ''
+GROUP BY
+    EXTRACT(YEAR FROM h.month)::int,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW analytics.mv_mobile_revenue_by_game_yearly AS
-WITH max_2025 AS (
-    SELECT MAX(f.date)::date AS max_date_2025
-    FROM core.fact_app_performance_daily AS f
-    JOIN core.dim_app_info AS a
-      ON a.app_id = f.app_id
-    JOIN core.dim_game_info AS g
-      ON g.unified_app_id = a.unified_app_id
-    WHERE f.date >= DATE '2025-01-01'
-      AND f.date < DATE '2026-01-01'
-      AND (
-        g.game_product_model IS NULL
-        OR g.game_product_model NOT IN ('Hybridcasual', 'Hypercasual', 'Exclusive Access')
-      )
-),
-days_2025 AS (
-    SELECT
-        max_date_2025,
-        ((max_date_2025 - DATE '2025-01-01') + 1)::numeric AS days_elapsed_2025,
-        365.0 / NULLIF(((max_date_2025 - DATE '2025-01-01') + 1)::numeric, 0) AS annualize_factor
-    FROM max_2025
-),
-app_year_revenue AS (
-    SELECT
-        year,
-        app_id,
-        total_revenue AS revenue_cent
-    FROM analytics.mobile_app_yearly_performance_cache
-    WHERE year BETWEEN 2014 AND 2025
-),
-game_year AS (
-    SELECT
-        a.unified_app_id,
-        g.name AS game_name,
-        g.game_class,
-        g.game_genre,
-        g.game_subgenre,
-        ayr.year,
-        SUM(ayr.revenue_cent) AS revenue_cent
-    FROM app_year_revenue AS ayr
-    JOIN core.dim_app_info AS a
-      ON a.app_id = ayr.app_id
-    JOIN core.dim_game_info AS g
-      ON g.unified_app_id = a.unified_app_id
-    WHERE (
-        g.game_product_model IS NULL
-        OR g.game_product_model NOT IN ('Hybridcasual', 'Hypercasual', 'Exclusive Access')
-    )
-    GROUP BY 1, 2, 3, 4, 5, 6
-),
-game_publishers AS (
-    SELECT
-        a.unified_app_id,
-        string_agg(DISTINCT a.cleaned_publisher_name, ', ' ORDER BY a.cleaned_publisher_name)
-            FILTER (WHERE a.cleaned_publisher_name IS NOT NULL AND btrim(a.cleaned_publisher_name) <> '')
-            AS cleaned_publisher_name
-    FROM core.dim_app_info AS a
-    GROUP BY 1
-)
+CREATE MATERIALIZED VIEW analytics.agg_subgenre_performance_monthly AS
 SELECT
-    gy.unified_app_id,
-    gy.game_name,
-    COALESCE(gp.cleaned_publisher_name, '') AS cleaned_publisher_name,
-    gy.game_class,
-    gy.game_genre,
-    gy.game_subgenre,
-    gy.year,
-    ROUND(
-        (
-            CASE
-                WHEN gy.year = 2025 THEN gy.revenue_cent * d.annualize_factor
-                ELSE gy.revenue_cent
-            END
-        ) / 100.0,
-        2
-    ) AS revenue_usd,
-    CASE WHEN gy.year = 2025 THEN d.max_date_2025 ELSE NULL END AS data_through_2025,
-    CASE WHEN gy.year = 2025 THEN d.days_elapsed_2025 ELSE NULL END AS days_elapsed_2025
-FROM game_year AS gy
-LEFT JOIN game_publishers AS gp
-  ON gp.unified_app_id = gy.unified_app_id
-CROSS JOIN days_2025 AS d
+    h.month,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre AS subgenre,
+    SUM(COALESCE(h.total_downloads, 0)) AS downloads,
+    SUM(COALESCE(h.total_revenue, 0)) AS revenue
+FROM analytics.mobile_app_monthly_performance_cache AS h
+JOIN core.dim_app_info AS a
+  ON a.app_id = h.app_id
+JOIN core.dim_game_info AS g
+  ON g.unified_app_id = a.unified_app_id
+WHERE g.game_subgenre IS NOT NULL
+  AND btrim(g.game_subgenre) <> ''
+GROUP BY
+    h.month,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre
 WITH NO DATA;
 
-CREATE MATERIALIZED VIEW analytics.mv_mobile_new_games_performance_by_launch_year AS
+CREATE MATERIALIZED VIEW analytics.agg_game_performance_yearly AS
+SELECT
+    EXTRACT(YEAR FROM h.month)::int AS year,
+    h.country,
+    g.name AS game_name,
+    a.unified_app_id,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre,
+    SUM(COALESCE(h.total_downloads, 0)) AS downloads,
+    SUM(COALESCE(h.total_revenue, 0)) AS revenue
+FROM analytics.mobile_app_monthly_performance_cache AS h
+JOIN core.dim_app_info AS a
+  ON a.app_id = h.app_id
+JOIN core.dim_game_info AS g
+  ON g.unified_app_id = a.unified_app_id
+WHERE a.unified_app_id IS NOT NULL
+  AND btrim(a.unified_app_id) <> ''
+GROUP BY
+    EXTRACT(YEAR FROM h.month)::int,
+    h.country,
+    g.name,
+    a.unified_app_id,
+    g.game_class,
+    g.game_genre,
+    g.game_subgenre
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW analytics.agg_new_game_new_performance AS
 WITH max_date_all AS (
     SELECT MAX(date)::date AS max_date
     FROM core.fact_app_performance_daily
@@ -599,7 +483,7 @@ SELECT
     grw.unified_app_id,
     g.name AS game_name,
     COALESCE(gp.cleaned_publisher_names, '') AS cleaned_publisher_names,
-    grw.game_first_date,
+    grw.game_first_date AS estimated_release_date,
     ROUND(
         CASE
             WHEN grw.max_date >= (grw.game_first_date + INTERVAL '6 days') THEN grw.sum_7d_usd
@@ -645,8 +529,11 @@ LEFT JOIN game_publishers AS gp
   ON gp.unified_app_id = grw.unified_app_id
 WITH NO DATA;
 
-CREATE INDEX idx_mv_mobile_game_monthly_perf_month_country_platform
-ON analytics.mv_mobile_game_monthly_performance (month, country, platform);
+CREATE INDEX idx_agg_game_perf_monthly_month_country
+ON analytics.agg_game_performance_monthly (month, country);
+
+CREATE INDEX idx_agg_game_perf_monthly_game_month
+ON analytics.agg_game_performance_monthly (unified_app_id, month);
 
 CREATE INDEX idx_mobile_app_monthly_cache_month_country_platform
 ON analytics.mobile_app_monthly_performance_cache (month, country, platform);
@@ -657,21 +544,6 @@ ON analytics.mobile_app_monthly_performance_cache (app_id, month);
 CREATE INDEX idx_mobile_app_yearly_cache_year_app
 ON analytics.mobile_app_yearly_performance_cache (year, app_id);
 
-CREATE INDEX idx_mv_mobile_game_monthly_perf_game_month
-ON analytics.mv_mobile_game_monthly_performance (game_id, month);
-
-CREATE INDEX idx_mv_mobile_game_monthly_perf_publisher_month
-ON analytics.mv_mobile_game_monthly_performance (publisher_id, month);
-
-CREATE INDEX idx_mv_mobile_market_monthly_overview_month_country
-ON analytics.mv_mobile_market_monthly_overview (month, country);
-
-CREATE INDEX idx_mv_mobile_publisher_monthly_perf_month_country_platform
-ON analytics.mv_mobile_publisher_monthly_performance (month, country, platform);
-
-CREATE INDEX idx_mv_mobile_publisher_monthly_perf_publisher_month
-ON analytics.mv_mobile_publisher_monthly_performance (publisher_id, month);
-
 CREATE INDEX idx_mv_mobile_taxonomy_monthly_perf_month_country_platform
 ON analytics.mv_mobile_taxonomy_monthly_performance (month, country, platform);
 
@@ -681,20 +553,26 @@ ON analytics.mv_mobile_taxonomy_monthly_performance (game_class, game_genre, gam
 CREATE INDEX idx_mv_mobile_download_total_yearly_year
 ON analytics.mv_mobile_download_total_yearly (year);
 
-CREATE INDEX idx_mv_mobile_revenue_by_subgenre_yearly_year
-ON analytics.mv_mobile_revenue_by_subgenre_yearly (year);
+CREATE INDEX idx_agg_subgenre_perf_yearly_year
+ON analytics.agg_subgenre_performance_yearly (year);
 
-CREATE INDEX idx_mv_mobile_revenue_by_subgenre_yearly_taxonomy_year
-ON analytics.mv_mobile_revenue_by_subgenre_yearly (game_class, game_genre, subgenre, year);
+CREATE INDEX idx_agg_subgenre_perf_yearly_taxonomy_year
+ON analytics.agg_subgenre_performance_yearly (game_class, game_genre, subgenre, year);
 
-CREATE INDEX idx_mv_mobile_revenue_by_game_yearly_year_revenue
-ON analytics.mv_mobile_revenue_by_game_yearly (year, revenue_usd DESC);
+CREATE INDEX idx_agg_subgenre_perf_monthly_month
+ON analytics.agg_subgenre_performance_monthly (month);
 
-CREATE INDEX idx_mv_mobile_revenue_by_game_yearly_game_year
-ON analytics.mv_mobile_revenue_by_game_yearly (unified_app_id, year);
+CREATE INDEX idx_agg_subgenre_perf_monthly_taxonomy_month
+ON analytics.agg_subgenre_performance_monthly (game_class, game_genre, subgenre, month);
 
-CREATE INDEX idx_mv_mobile_new_games_perf_launch_year
-ON analytics.mv_mobile_new_games_performance_by_launch_year (year);
+CREATE INDEX idx_agg_game_perf_yearly_year_country
+ON analytics.agg_game_performance_yearly (year, country);
 
-CREATE INDEX idx_mv_mobile_new_games_perf_first_date
-ON analytics.mv_mobile_new_games_performance_by_launch_year (game_first_date);
+CREATE INDEX idx_agg_game_perf_yearly_game_year
+ON analytics.agg_game_performance_yearly (unified_app_id, year);
+
+CREATE INDEX idx_agg_new_game_new_perf_launch_year
+ON analytics.agg_new_game_new_performance (year);
+
+CREATE INDEX idx_agg_new_game_new_perf_estimated_release_date
+ON analytics.agg_new_game_new_performance (estimated_release_date);
