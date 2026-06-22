@@ -47,18 +47,20 @@ def fetch_catalog_columns(object_names: list[str]) -> list[dict[str, Any]]:
                 WHEN 'r' THEN 'table'
                 ELSE c.relkind::text
             END AS object_type,
-            cols.column_name,
-            cols.data_type,
-            cols.is_nullable,
-            cols.ordinal_position
+            a.attname AS column_name,
+            pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+            NOT a.attnotnull AS is_nullable,
+            a.attnum AS ordinal_position
         FROM pg_class AS c
         JOIN pg_namespace AS n
           ON n.oid = c.relnamespace
-        JOIN information_schema.columns AS cols
-          ON cols.table_schema = n.nspname
-         AND cols.table_name = c.relname
+        JOIN pg_attribute AS a
+          ON a.attrelid = c.oid
         WHERE concat(n.nspname, '.', c.relname) = ANY(%(object_names)s)
-        ORDER BY object_name, cols.ordinal_position
+          AND c.relkind IN ('r', 'v', 'm')
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        ORDER BY object_name, a.attnum
     """
     return fetch_all(query, {"object_names": object_names})
 
