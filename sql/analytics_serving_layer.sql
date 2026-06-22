@@ -53,6 +53,15 @@ SELECT
     g.game_class,
     g.game_genre,
     g.game_subgenre,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip,
     SUM(COALESCE(f.downloads, 0)) AS downloads,
     SUM(COALESCE(f.revenue, 0)) AS revenue
 FROM (
@@ -98,7 +107,16 @@ GROUP BY
     g.name,
     g.game_class,
     g.game_genre,
-    g.game_subgenre;
+    g.game_subgenre,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip;
 
 CREATE TABLE analytics.mobile_app_monthly_performance_cache AS
 SELECT
@@ -178,6 +196,15 @@ SELECT
     g.game_class,
     g.game_genre,
     g.game_subgenre,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip,
     SUM(COALESCE(h.total_downloads, 0)) AS downloads,
     SUM(COALESCE(h.total_revenue, 0)) AS revenue
 FROM analytics.mobile_app_monthly_performance_cache AS h
@@ -197,7 +224,16 @@ GROUP BY
     COALESCE(gp.cleaned_publisher_name, ''),
     g.game_class,
     g.game_genre,
-    g.game_subgenre
+    g.game_subgenre,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip
 WITH NO DATA;
 
 CREATE MATERIALIZED VIEW analytics.mv_mobile_taxonomy_monthly_performance AS
@@ -330,6 +366,15 @@ SELECT
     g.game_class,
     g.game_genre,
     g.game_subgenre,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip,
     SUM(COALESCE(h.total_downloads, 0)) AS downloads,
     SUM(COALESCE(h.total_revenue, 0)) AS revenue
 FROM analytics.mobile_app_monthly_performance_cache AS h
@@ -346,7 +391,16 @@ GROUP BY
     a.unified_app_id,
     g.game_class,
     g.game_genre,
-    g.game_subgenre
+    g.game_subgenre,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip
 WITH NO DATA;
 
 CREATE MATERIALIZED VIEW analytics.agg_new_game_new_performance AS
@@ -484,6 +538,15 @@ SELECT
     g.name AS game_name,
     COALESCE(gp.cleaned_publisher_names, '') AS cleaned_publisher_names,
     grw.game_first_date AS estimated_release_date,
+    g.game_art_style,
+    g.game_camera_pov,
+    g.game_setting,
+    g.game_theme,
+    g.game_product_model,
+    g.game_ip_corporate_parent,
+    g.game_ip_operator,
+    g.game_ip_media_type,
+    g.game_licensed_ip,
     ROUND(
         CASE
             WHEN grw.max_date >= (grw.game_first_date + INTERVAL '6 days') THEN grw.sum_7d_usd
