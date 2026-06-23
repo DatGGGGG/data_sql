@@ -26,6 +26,8 @@ Services:
 - `GET /games/{unified_app_id}`
 - `GET /meta/catalog`
 - `POST /query`
+- `POST /charts/render`
+- `GET /charts/artifacts/{artifact_id}`
 - `GET /apps`
 - `GET /apps/{app_id}`
 - `GET /apps/{app_id}/performance`
@@ -53,6 +55,39 @@ curl -X POST "http://localhost:8000/query" \
 ```
 
 The query endpoint is restricted to approved `analytics` objects and read-only SQL.
+
+Chart render endpoint example:
+
+```bash
+curl -X POST "http://localhost:8000/charts/render" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_KEY_HERE" \
+  -d @- <<'JSON'
+{
+  "data": [
+    {"month": "2026-01-01", "game_name": "Game A", "revenue_usd": 12345.67},
+    {"month": "2026-02-01", "game_name": "Game A", "revenue_usd": 14001.22}
+  ],
+  "spec": {
+    "chart_type": "line",
+    "title": "Monthly Revenue",
+    "x": "month",
+    "y": "revenue_usd",
+    "series": "game_name",
+    "sort": "x_asc",
+    "x_type": "time",
+    "y_format": "currency",
+    "legend": true
+  },
+  "source": {
+    "question": "Doanh thu theo tháng của Game A",
+    "sql": "SELECT ..."
+  }
+}
+JSON
+```
+
+The render endpoint returns a signed, expiring `chart_url` for an interactive HTML artifact served by the same API.
 
 ## Database setup
 
@@ -208,6 +243,24 @@ Notes:
 - The ngrok service forwards public HTTP traffic to the internal API service at `http://api:8000`.
 - On free plans, ngrok usually assigns a random public URL each time the tunnel starts.
 - If you need a fixed domain later, add the appropriate ngrok `--url` configuration supported by your account plan.
+- If agents call the API through ngrok and then ask `/charts/render` for chart URLs, set `API_PUBLIC_BASE_URL` to your active public URL if requests are not already coming in through that same public host.
+
+## Chart artifact settings
+
+Optional environment variables for the API service:
+
+- `API_PUBLIC_BASE_URL`: public base URL used when generating chart links, for example your ngrok or future domain
+- `API_CHART_ARTIFACT_DIR`: directory where rendered chart HTML artifacts are stored
+- `API_CHART_TTL_HOURS`: artifact lifetime in hours, default `168` (7 days)
+- `API_CHART_MAX_ROWS`: maximum number of rows accepted by `/charts/render`, default `500`
+- `API_CHART_SIGNING_SECRET`: signing secret for expiring chart URLs
+
+Recommended agent flow for visualization:
+
+1. call `POST /query`
+2. use `rows` from the result to build a constrained chart spec
+3. call `POST /charts/render`
+4. return the resulting `chart_url` to the user
 
 ## Repo structure
 

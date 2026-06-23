@@ -5,9 +5,16 @@ from typing import Any
 
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from .charts import (
+    ChartArtifactAccessError,
+    ChartValidationError,
+    RenderChartRequest,
+    load_chart_artifact,
+    render_chart_artifact,
+)
 from .catalog import CATALOG, allowed_catalog_objects
 from .config import get_settings
 from .db import fetch_all, fetch_catalog_columns, fetch_one, ping_database, run_read_only_query
@@ -69,7 +76,7 @@ def root() -> dict[str, Any]:
         "name": settings.app_name,
         "version": settings.app_version,
         "docs": "/docs",
-        "auth": {"header": "X-API-Key", "protected_endpoints": "all data endpoints"},
+        "auth": {"header": "X-API-Key", "protected_endpoints": "all data endpoints plus /charts/render"},
         "endpoints": [
             "/health",
             "/games/search",
@@ -77,6 +84,8 @@ def root() -> dict[str, Any]:
             "/games/{unified_app_id}",
             "/meta/catalog",
             "/query",
+            "/charts/render",
+            "/charts/artifacts/{artifact_id}",
             "/apps",
             "/apps/{app_id}",
             "/apps/{app_id}/performance",
@@ -224,6 +233,32 @@ def query_analytics(request: QueryRequest) -> dict[str, Any]:
     result["referenced_objects"] = list(validated.referenced_objects)
     result["max_rows"] = normalize_query_row_limit(request.max_rows)
     return result
+
+
+@protected.post("/charts/render")
+def render_chart(http_request: Request, request: RenderChartRequest) -> dict[str, Any]:
+    try:
+        return render_chart_artifact(
+            request,
+            settings,
+            str(http_request.base_url).rstrip("/"),
+        )
+    except ChartValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/charts/artifacts/{artifact_id}")
+def get_chart_artifact(artifact_id: str, token: str = Query(..., min_length=8)) -> FileResponse:
+    try:
+        artifact_path = load_chart_artifact(artifact_id, token, settings)
+    except ChartArtifactAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return FileResponse(
+        artifact_path,
+        media_type="text/html",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @protected.get("/games/{unified_app_id}")

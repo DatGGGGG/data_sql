@@ -31,6 +31,11 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mydb
       API_NAME: Strategy Data API
       API_VERSION: 0.1.0
+      API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-}
+      API_CHART_ARTIFACT_DIR: ${API_CHART_ARTIFACT_DIR:-}
+      API_CHART_TTL_HOURS: ${API_CHART_TTL_HOURS:-}
+      API_CHART_MAX_ROWS: ${API_CHART_MAX_ROWS:-}
+      API_CHART_SIGNING_SECRET: ${API_CHART_SIGNING_SECRET:-}
     ports:
       - "8000:8000"
   ngrok:
