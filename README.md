@@ -89,6 +89,17 @@ JSON
 
 The render endpoint returns a signed, expiring `chart_url` for an interactive HTML artifact served by the same API.
 
+Supported `chart_type` values:
+
+- `line`
+- `bar`
+- `grouped_bar`
+- `stacked_bar`
+- `scatter`
+- `histogram`
+- `donut`
+- `table`
+
 ## Database setup
 
 The API assumes the schemas already exist in Postgres.

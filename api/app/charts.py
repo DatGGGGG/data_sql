@@ -29,7 +29,7 @@ class ChartArtifactAccessError(ValueError):
 
 
 class ChartSpec(BaseModel):
-    chart_type: Literal["line", "bar", "stacked_bar", "scatter", "table"]
+    chart_type: Literal["line", "bar", "grouped_bar", "stacked_bar", "scatter", "histogram", "donut", "table"]
     title: str = Field(min_length=1, max_length=200)
     x: str | None = Field(default=None, min_length=1, max_length=128)
     y: str | None = Field(default=None, min_length=1, max_length=128)
@@ -41,8 +41,14 @@ class ChartSpec(BaseModel):
 
     @model_validator(mode="after")
     def validate_axes(self) -> "ChartSpec":
-        if self.chart_type != "table" and (not self.x or not self.y):
-            raise ValueError("x and y are required for non-table charts.")
+        if self.chart_type == "table":
+            return self
+        if self.chart_type == "histogram":
+            if not self.x:
+                raise ValueError("x is required for histogram charts.")
+            return self
+        if not self.x or not self.y:
+            raise ValueError("x and y are required for this chart type.")
         return self
 
 
@@ -166,6 +172,10 @@ def validate_chart_request(payload: RenderChartRequest, max_rows: int) -> None:
 def build_figure(rows: list[dict[str, Any]], spec: ChartSpec) -> go.Figure:
     if spec.chart_type == "table":
         return build_table_figure(rows, spec)
+    if spec.chart_type == "donut":
+        return build_donut_figure(rows, spec)
+    if spec.chart_type == "histogram":
+        return build_histogram_figure(rows, spec)
 
     traces: list[Any] = []
     grouped_rows = group_rows(rows, spec.series)
@@ -191,6 +201,8 @@ def build_figure(rows: list[dict[str, Any]], spec: ChartSpec) -> go.Figure:
     }
     if spec.chart_type == "stacked_bar":
         layout["barmode"] = "stack"
+    elif spec.chart_type == "grouped_bar":
+        layout["barmode"] = "group"
 
     if spec.x_type == "time":
         layout["xaxis"] = {"type": "date"}
@@ -221,6 +233,61 @@ def build_table_figure(rows: list[dict[str, Any]], spec: ChartSpec) -> go.Figure
         template="plotly_white",
         margin={"l": 24, "r": 24, "t": 72, "b": 24},
     )
+    return figure
+
+
+def build_donut_figure(rows: list[dict[str, Any]], spec: ChartSpec) -> go.Figure:
+    labels = [row.get(spec.x or "") for row in rows]
+    values = [row.get(spec.y or "") for row in rows]
+    figure = go.Figure(
+        data=[
+            go.Pie(
+                labels=labels,
+                values=values,
+                hole=0.5,
+                sort=False,
+                textinfo="label+percent",
+            )
+        ]
+    )
+    figure.update_layout(
+        title=spec.title,
+        showlegend=spec.legend,
+        template="plotly_white",
+        margin={"l": 24, "r": 24, "t": 72, "b": 24},
+    )
+    return figure
+
+
+def build_histogram_figure(rows: list[dict[str, Any]], spec: ChartSpec) -> go.Figure:
+    traces: list[Any] = []
+    grouped_rows = group_rows(rows, spec.series)
+
+    for series_name, series_rows in grouped_rows.items():
+        x_values = [row.get(spec.x or "") for row in series_rows]
+        trace_name = series_name if spec.series else spec.title
+        traces.append(
+            go.Histogram(
+                x=x_values,
+                name=trace_name,
+                opacity=0.75 if spec.series else 1.0,
+            )
+        )
+
+    figure = go.Figure(data=traces)
+    layout: dict[str, Any] = {
+        "title": spec.title,
+        "showlegend": bool(spec.series and spec.legend),
+        "template": "plotly_white",
+        "margin": {"l": 48, "r": 24, "t": 72, "b": 48},
+        "barmode": "overlay" if spec.series else "relative",
+    }
+    if spec.x_type == "time":
+        layout["xaxis"] = {"type": "date"}
+    elif spec.x_type == "numeric":
+        layout["xaxis"] = {"type": "linear"}
+
+    figure.update_layout(**layout)
     return figure
 
 
